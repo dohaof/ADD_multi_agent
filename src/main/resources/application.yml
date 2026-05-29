@@ -1,0 +1,11 @@
+spring:
+  ai:
+    dashscope:
+      api-key: ${DASHSCOPE_API_KEY}
+      chat:
+        options:
+          model: deepseek-v4-pro
+
+logging:
+  level:
+    com.group9: DEBUG
