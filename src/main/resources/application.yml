@@ -1,13 +1,12 @@
 spring:
   main:
     web-application-type: none
-  ai:
-    dashscope:
-      api-key: ${DASHSCOPE_API_KEY}
-      base-url: ${DASHSCOPE_BASE_URL:https://api.ppio.com/openai}
-      chat:
-        options:
-          model: gpt-5.4
+
+# Model selection for the agents. The actual ChatModel is built in ModelConfig from
+# DASHSCOPE_API_KEY / DASHSCOPE_BASE_URL (loaded from .env), pointing at the PPIO
+# OpenAI-compatible endpoint. Override the model id here if needed.
+add:
+  model: pa/gpt-5.4
 
 logging:
   level:

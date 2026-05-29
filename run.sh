@@ -8,4 +8,5 @@ if [ -z "$DASHSCOPE_API_KEY" ]; then
 fi
 
 echo "Starting ADD 3.0 Multi-Agent System..."
-mvn clean spring-boot:run
+# -s .mvn/settings.xml works around the global http Maven mirror that Maven 3.9+ blocks.
+mvn -s .mvn/settings.xml clean spring-boot:run

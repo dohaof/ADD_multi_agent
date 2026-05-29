@@ -35,20 +35,21 @@
 
 ### Dialogue Rules
 
-1. **Sequential Flow**: Architect → Quality → Reviewer
-2. **Context Passing**: Each agent receives relevant context from previous agents
-3. **No Cross-Talk**: Agents do not directly communicate; orchestrator mediates
-4. **Single Iteration**: Each agent processes once per iteration
+1. **Sequential Flow**: Architect → Quality → Reviewer, implemented as a Spring AI Alibaba `StateGraph` (`START → architect → quality → reviewer → END`).
+2. **Context Passing**: Agents share an `OverAllState`. The Architect reads the iteration context; the Quality agent reads the context + Architect output; the Reviewer reads the context + both prior outputs.
+3. **No Cross-Talk**: Agents do not call each other directly; the graph edges and shared state mediate all data flow.
+4. **Single Iteration**: The graph is invoked once per iteration; each agent runs once per invocation.
 
 ### Workflow
 
 ```
 For each iteration (1-4):
-  1. Orchestrator prepares context (ADD method + Case study + Iteration goal)
-  2. Architect Agent receives context and proposes design
-  3. Quality Agent receives proposal and evaluates
-  4. Reviewer Agent receives both and produces final design
-  5. All interactions logged with timestamps
+  1. Orchestrator builds context (ADD method + Case study + Iteration goal)
+  2. Orchestrator invokes the compiled StateGraph with iteration_context
+  3. architect node  -> ReactAgent(architect) -> writes architect_output
+  4. quality node    -> ReactAgent(quality)   -> reads architect_output, writes quality_output
+  5. reviewer node   -> ReactAgent(reviewer)  -> reads both, writes reviewer_output
+  6. Orchestrator reads all three outputs from final state and logs them with timestamps
 ```
 
 ## Prior Knowledge Provided
@@ -72,19 +73,20 @@ Complete 7-step process embedded in KnowledgeBase.java
 ## Implementation Details
 
 ### Technology Stack
-- Spring Boot 3.3.0
-- Spring AI Alibaba 1.0.0-M3.2
+- Spring Boot 3.5.8
+- Spring AI Alibaba Agent Framework 1.1.2.2 (ReactAgent + Graph runtime)
+- Spring AI 1.1.2 (OpenAI-compatible ChatModel)
 - Java 21
 - Maven
 
 ### Key Components
 
-1. **ADDOrchestrator.java**: Coordinates multi-agent workflow
-2. **ArchitectAgent.java**: Proposes designs
-3. **QualityAgent.java**: Evaluates quality
-4. **ReviewerAgent.java**: Makes final decisions
-5. **KnowledgeBase.java**: Stores all prior knowledge
-6. **Message.java**: Conversation log model
+1. **ModelConfig.java**: Builds the shared `OpenAiChatModel` pointing at the PPIO endpoint.
+2. **AgentConfig.java**: Declares the three `ReactAgent` beans (architect / quality / reviewer), each with its role instruction.
+3. **ADDGraphFactory.java**: Wires the three agents into a `StateGraph` and compiles it.
+4. **ADDOrchestrator.java**: Invokes the compiled graph once per iteration and logs outputs.
+5. **KnowledgeBase.java**: Stores all prior knowledge and the three role instructions.
+6. **Message.java**: Conversation log model.
 
 ### Conversation Logging
 - All agent interactions logged with timestamps
@@ -119,7 +121,7 @@ For each iteration:
 
 ## Notes
 
-- System uses deepseek-v4-pro model via DashScope API
-- All agent prompts are system-level instructions
-- No hardcoded architectural decisions
-- Agents collaborate through orchestrator mediation
+- The model is `pa/gpt-5.4`, accessed through the PPIO OpenAI-compatible endpoint (`DASHSCOPE_BASE_URL`) using `DASHSCOPE_API_KEY`. Change `add.model` in `application.yml` to switch models.
+- All agent prompts are system-level instructions derived only from the prior knowledge.
+- No hardcoded architectural decisions.
+- Agents collaborate through the StateGraph and shared state, not direct calls.

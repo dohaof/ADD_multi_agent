@@ -1,8 +1,8 @@
 package com.group9.addagent.service;
 
-import com.group9.addagent.agent.ArchitectAgent;
-import com.group9.addagent.agent.QualityAgent;
-import com.group9.addagent.agent.ReviewerAgent;
+import com.alibaba.cloud.ai.graph.CompiledGraph;
+import com.alibaba.cloud.ai.graph.OverAllState;
+import com.group9.addagent.graph.ADDGraphFactory;
 import com.group9.addagent.model.KnowledgeBase;
 import com.group9.addagent.model.Message;
 import lombok.RequiredArgsConstructor;
@@ -15,15 +15,22 @@ import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
+import java.util.Optional;
 
+/**
+ * Drives the ADD 3.0 process across the four prescribed iterations.
+ * <p>
+ * For each iteration it seeds the shared graph state with the iteration context and runs the
+ * compiled multi-agent graph (architect -> quality -> reviewer), then records every agent's
+ * output into a timestamped conversation log.
+ */
 @Service
 @RequiredArgsConstructor
 @Slf4j
 public class ADDOrchestrator {
 
-    private final ArchitectAgent architectAgent;
-    private final QualityAgent qualityAgent;
-    private final ReviewerAgent reviewerAgent;
+    private final CompiledGraph addCompiledGraph;
     private final List<Message> conversationLog = new ArrayList<>();
 
     public void executeADDProcess() {
@@ -32,6 +39,9 @@ public class ADDOrchestrator {
         for (int iteration = 1; iteration <= 4; iteration++) {
             log.info("=== Iteration {} ===", iteration);
             executeIteration(iteration);
+            // Persist after every iteration so a long run that is interrupted still
+            // leaves a usable transcript (the log is a graded deliverable).
+            saveConversationLog();
         }
 
         saveConversationLog();
@@ -40,22 +50,28 @@ public class ADDOrchestrator {
 
     private void executeIteration(int iteration) {
         String iterationGoal = KnowledgeBase.getIterationGoal(iteration);
-
         logMessage("SYSTEM", "Starting " + iterationGoal);
 
         String context = buildContext(iteration);
 
-        logMessage("SYSTEM", "Sending context to Architect Agent");
-        String architectProposal = architectAgent.analyze(context);
-        logMessage("ARCHITECT", architectProposal);
+        Optional<OverAllState> result;
+        try {
+            result = addCompiledGraph.invoke(Map.of(ADDGraphFactory.ITERATION_CONTEXT, context));
+        } catch (Exception e) {
+            log.error("Iteration {} failed", iteration, e);
+            logMessage("SYSTEM", "Iteration " + iteration + " failed: " + e.getMessage());
+            return;
+        }
 
-        logMessage("SYSTEM", "Sending proposal to Quality Agent");
-        String qualityEvaluation = qualityAgent.evaluate(architectProposal);
-        logMessage("QUALITY", qualityEvaluation);
+        if (result.isEmpty()) {
+            logMessage("SYSTEM", "Iteration " + iteration + " produced no state");
+            return;
+        }
 
-        logMessage("SYSTEM", "Sending to Reviewer Agent for final decision");
-        String finalDesign = reviewerAgent.review(architectProposal, qualityEvaluation);
-        logMessage("REVIEWER", finalDesign);
+        OverAllState state = result.get();
+        logMessage("ARCHITECT", state.value(ADDGraphFactory.ARCHITECT_OUTPUT, "(no output)"));
+        logMessage("QUALITY", state.value(ADDGraphFactory.QUALITY_OUTPUT, "(no output)"));
+        logMessage("REVIEWER", state.value(ADDGraphFactory.REVIEWER_OUTPUT, "(no output)"));
 
         logMessage("SYSTEM", "Iteration " + iteration + " completed\n" + "=".repeat(80) + "\n");
     }
@@ -69,10 +85,10 @@ public class ADDOrchestrator {
                 Current Iteration Goal: %s
 
                 Instructions:
-                - Follow ADD method steps 1-7
-                - Use only provided knowledge
-                - Generate views in Mermaid syntax
-                - Document all design decisions with rationale
+                - Follow the ADD 3.0 method steps relevant to your role.
+                - Use only the provided knowledge above.
+                - Generate every architectural view as a Mermaid diagram in a ```mermaid code block.
+                - Document all design decisions with their rationale and the drivers they satisfy.
                 """,
                 KnowledgeBase.ADD_METHOD,
                 KnowledgeBase.CASE_STUDY,
